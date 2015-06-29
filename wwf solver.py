@@ -2,9 +2,8 @@ from operator import itemgetter
 
 def import_board( path, tile_ref, word_ref ):
     f = open( path )
-    tile_board = [[tile_ref[e] for e in line] for line in f]
-    word_board = [[word_ref[e] for e in line] for line in f]
-    return tile_board, word_board
+    board = [ [ (' ', tile_ref[e], board_ref[e], False) for e in line.strip('\n') ] for line in f ]
+    return board
 
 def remove_element( list, index ):
     return list[:index] + list[index+1:]
@@ -12,11 +11,8 @@ def remove_element( list, index ):
 def check_word( word, tree ):
     try:
         if len(word) == 0:
-            return tree[-1]
-        elif False != tree[ word[0] ]:
-            return check_word( word[1:], tree[ word[0] ] )
-        else:
-            return False
+            return tree['word']
+        return check_word( word[1:], tree[ word[0] ] )
     except KeyError:
         return False
 
@@ -39,7 +35,7 @@ def tree_rec( word_list, cur_str=''):
         cur_dict ['word'] = True
     return cur_dict
 
-def rec_search( tree, hand, cur_str="", req_len=2 ):
+def rec_search( full_tree, tree_sect, hand, cur_str="", req_len=min_len ):
     # If there's a 'word' key, it should be True, so there shouldn't be a need in checking if it's true.
     # After returning this result, continue with the rest of the search.
     try:
@@ -50,19 +46,39 @@ def rec_search( tree, hand, cur_str="", req_len=2 ):
     # Index and current letter being for looped through 'hand'.
     # i makes it easier to omit the current letter when running the next level of recursion.
     for i, let in enumerate( hand ):
-        if let == '_':
-            for sub_let, tree_sect in tree.items():
+        if let == wildcard:
+            # If current letter is a wildcard, for loop through all next letters in the next iteration of word_tree, and ignores the possible 'word' iteration.
+            for sub_let, wild_sect in tree.items():
                 if sub_let == 'word':
                     continue
-                for result, r_point in rec_search( tree_sect, remove_element( hand, i), cur_str + sub_let.upper(), req_len ):
-                    yield result, r_point
+                for result in rec_search( full_tree, wild_sect, remove_element( hand, i), cur_str + sub_let.upper(), req_len ):
+                    yield result
             continue
         else:
             try:
-                for result, r_point in rec_search( tree[let], remove_element( hand, i), cur_str + let, points + letter_ref[let] ):
-                    yield result, r_point
+                for result in rec_search( full_tree, tree_sect[let], remove_element( hand, i), cur_str + let, points + letter_ref[let] ):
+                    yield result
             except KeyError:
                 pass
+
+def search_base( board, full_tree, len_hand ):
+    potential_list = []
+    for y, row in enumerate( board ):
+        for x, (let, tile_mult, word_mult, new) in enumerate( row ):
+            if let != blank_space:
+                try:
+                    # Delta x and y from a list of constants, chosen so it goes in a semi-cross pattern around the current letter.
+                    # First pass is for words that will be going downwards in direction.
+                    for d_y, d_x in [(-1,0),(0,-1),(0,1)]:
+                        if board[y+d_y][x+d_x][0] == blank_space:
+                            for dd_y in range( len_hand ):
+                                
+                    for d_y, d_x in [(-1,0),(0,-1),(1,0)]:
+                        if board[y+d_y][x+d_x][0] == blank_space:
+                            for dd_x in range( len_hand ):
+                                
+                except IndexError:
+                    pass
 
 # Point/Letter reference. Point values for all letters.
 letter_ref = {
@@ -92,22 +108,34 @@ letter_ref = {
     'x':8,
     'y':3,
     'z':10,
-    '_':0}
+    '?':0}
+
+wildcard = '?'
+min_len = 2
+blank_space = ' '
 
 bingo_bonus = 35
 board_path = "wwf board.txt"
 board_tile_ref = {
+    ' ':1,
+    's':1,
     'd':2,
-    't':3}
+    'D':1,
+    't':3,
+    'T':1}
 board_word_ref = {
+    ' ':1,
+    's':1,
+    'd':1,
     'D':2,
+    't':1,
     'T':3}
 
 print "Loading...",
 word_str = open( "enable1.txt" ).read()
 word_list = word_str.lower().split( '\n' )
 word_tree = tree_rec( word_list )
-print "\rDone!     "
+print "\r          \rDone!"
 
 while True:
     # List of inputed letters. Raw_input then is changed into a list of strings so it's easier to work with.
