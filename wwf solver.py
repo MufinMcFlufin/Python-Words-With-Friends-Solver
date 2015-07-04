@@ -100,7 +100,7 @@ def import_board( board_path, score_board_path ):
     # Fix tile and word values
     for y, row in enumerate( board ):
         for x, d in enumerate( row ):
-            if d['let']:
+            if d['let'] != blank_space:
                 board[y][x]['tile'], board[y][x]['word'] = 1, 1
     
     return board
@@ -207,14 +207,14 @@ def sub_board( board, (y,x), let ):
     word = board[y][x]['word']
     return board[:y] + [board[y][:x] + [{'let':let, 'tile':tile, 'word':word, 'new':True }] + board[y][x+1:]] + board[y+1:]
 
-def get_new_words( board, verbose=False ):
+def get_new_words( board ):
     """ All words in the current state of the board that have at least one 'new' flag as True """
     for y, row in enumerate( board ):
         for x, d in enumerate( row ):
             let = d['let']
-            new = d['new']
             if let != blank_space:
                 for dir in forward_dirs:
+                    new = d['new']
                     o_dir = oppo_dir[dir]
                     o_y, o_x = dir_ref[o_dir]
                     n_y = y + o_y
@@ -238,9 +238,9 @@ def get_new_words( board, verbose=False ):
                         if new and len(cur_str) >= min_len:
                             yield (y, x), dir
 
-def get_word_score( board, (y, x), dir, verbose=False ):
+def get_word_score( board, (y, x), dir ):
     output = 0
-    for (y, x), dir in get_new_words( board, verbose ):
+    for (y, x), dir in get_new_words( board ):
         score = 0
         word_mult = 1
         n_y, n_x = y, x
@@ -434,3 +434,4 @@ while True:
         
         s = raw_input('Press [ENTER] when board.txt is ready to be refreshed.')
 
+ejrr
