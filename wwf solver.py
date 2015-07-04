@@ -270,7 +270,7 @@ def board_rec_search( board, full_tree, tree_sect, hand, (y, x), dir, cur_str=""
         score = get_word_score( board, (y, x), dir )
         if hand == []:
             score += bingo_bonus
-        if check_board( board, full_tree, (n_y, n_x), dir ):
+        if check_coords( board, (n_y, n_x) ):
             if tree_sect['word'] and len(cur_str) >= req_len and blank_space == board[n_y][n_x]['let']:
                 yield cur_str, (y, x), dir, score
         else:
