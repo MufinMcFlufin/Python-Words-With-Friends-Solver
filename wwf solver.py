@@ -1,5 +1,5 @@
 from operator import itemgetter
-import traceback
+import os, sys
 
 # Point/Letter reference. Point values for all letters.
 letter_ref = {
@@ -34,14 +34,21 @@ letter_ref = {
 wildcard = '?'
 min_len = 2
 blank_space = ' '
-dir_ref = {'u':(-1,0),'d':(1,0),'l':(0,-1),'r':(0,1)}
+bingo_bonus = 35
+board_path = 'board.txt'
+score_board_path = 'wwf board.txt'
+result_limit = 5
+
+dir_ref = {'u':(-1,0), 'd':(1,0), 'l':(0,-1), 'r':(0,1)}
 oppo_dir = {'u':'d', 'd':'u', 'l':'r', 'r':'l'}
+# Perpendicular directions of given dir
+perp_dir = {'u':'lr', 'd':'lr', 'l':'ud', 'r':'ud',}
+# These are the directions that words are oriented in.
+forward_dirs = 'rd'
+
 cross_list = [
     [[(-1,0),(0,-1),(0,1)], 'u'],
     [[(-1,0),(0,-1),(1,0)], 'l']]
-
-bingo_bonus = 35
-board_path = "wwf board.txt"
 board_tile_ref = {
     ' ':1,
     's':1,
@@ -57,9 +64,45 @@ board_word_ref = {
     't':1,
     'T':3}
 
-def import_board( path, tile_ref, word_ref ):
-    f = open( path )
-    board = [ [ (' ', tile_ref[e], board_ref[e], False) for e in line.strip('\n') ] for line in f ]
+def print_board( board ):
+    print '\n'.join( ['+' + '-' * len( board[0] ) + '+'] + [ '|' + ''.join([ d['let'] for d in row ]) + '|' for row in board ] + ['+' + '-' * len( board[-1] ) + '+']) + '\n'
+
+def import_board( board_path, score_board_path ):
+    # Function absolutely requires board_path and score_board_path to be the same dimensions
+    # Otherwise it doesn't know what to do with the additional information,
+    # And will allow itself to fail because of this.
+    
+    letter_file = open( board_path, 'r' )
+    data = letter_file.read()
+    letter_board = [ [ {'let': e, 'new': False} for e in row ] for row in data.split('\n') ]
+    letter_file.close()
+    
+    score_file = open( score_board_path, 'r' )
+    data = score_file.read()
+    score_board = [ [ { 'tile': board_tile_ref[e], 'word': board_word_ref[e] } for e in row ] for row in data.split('\n') ]
+    score_file.close()
+    
+    # Initialize the board with letter and new values
+    board = []
+    for row in letter_board:
+        board.append([])
+        for d in row:
+            let = d['let']
+            new = d['new']
+            board[-1].append({ 'let': let, 'new': new })
+    
+    # Add in tile and word values
+    for y, row in enumerate( score_board ):
+        for x, d in enumerate( row ):
+            board[y][x]['tile'] = d['tile']
+            board[y][x]['word'] = d['word']
+    
+    # Fix tile and word values
+    for y, row in enumerate( board ):
+        for x, d in enumerate( row ):
+            if d['let']:
+                board[y][x]['tile'], board[y][x]['word'] = 1, 1
+    
     return board
 
 def check_coords( board, (y, x) ):
@@ -129,60 +172,112 @@ def tree_rec( word_list, cur_str=''):
         cur_dict ['word'] = True
     return cur_dict
 
-def check_board( board, word_tree ):
-    # Loop through all of the board to find words that aren't valid.
-    for y, row in enumerate( board ):
-        for x, d in enumerate( row ):
-            let, new = d['let'], d['new']
-            if let != blank_space:
-                # After finding a letter, first check downward then right-ward
-                for dir in 'dr':
-                    dir_y, dir_x = dir_ref[dir]
-                    oppo_y, oppo_x = dir_ref[ oppo_dir [dir] ]
-                    # If pass coordinate check on proximity slots, check if the beginning of a word.
-                    # If fails coordinate check before the word, it's at the edge of the board, and beginning of a word.
-                    if check_coords( board, (y+oppo_y, x+oppo_x)):
-                        word_start = blank_space == board[y + oppo_y][x + oppo_x]['let']
-                    else:
-                        word_start = True
-                    # Would rather use a boolean and put all the code in one spot than copy paste.
-                    # Begin checking to see if found word is found in the word_tree
-                    # Function returns False is any word does not pass this check.
-                    if word_start:
-                        cur_str = ''
-                        cont = True
-                        tree_sect = word_tree
-                        while cont:
-                            try:
-                                if not check_coords( board, (y + dir_y * len(cur_str), x + dir_x * len(cur_str))):
-                                    raise IndexError
-                                let = board[ y + dir_y * len(cur_str) ][ x + dir_x * len(cur_str) ]['let']
-                                cont = let != blank_space
-                                if cont:
-                                    cur_str += let
-                                    tree_sect = tree_sect[let]
-                            except KeyError:
-                                return False
-                            except IndexError:
-                                cont = False
-                        if len( cur_str ) > 1:
-                            try:
-                                if not tree_sect['word']:
-                                    pass
-                            except KeyError:
-                                return False
+def check_board( board, word_tree, (y, x), dir ):
+    """ Function that will check the perpendicular word to a tile just laid down to make sure it's valid and legal. """
+    # cur_str will represent the current iteration of the potential word being checked.
+    # It will be appended unto by adjacent perpendicular letters, while checking that this word is valid.
+    # If it ever KeyError's, then the whole function fails and return False, as it is not a valid word found in word_tree.
+    cur_str = board[y][x]['let']
+    dir_y, dir_x = dir_ref[dir]
+    
+    # Look at the two directions perpendicular to [dir]
+    for p_dir in perp_dir[dir]:
+        p_dir_y, p_dir_x = dir_ref[p_dir]
+        p_y = y + p_dir_y
+        p_x = x + p_dir_x
+        try:
+            if not p_dir in forward_dirs:
+                cur_str = cur_str[::-1]
+            while blank_space != board[p_y][p_x]['let']:
+                cur_str += board[p_y][p_x]['let']
+                p_y += p_dir_y
+                p_x += p_dir_x
+            if not p_dir in forward_dirs:
+                cur_str = cur_str[::-1]
+        except IndexError:
+            # IndexError should only occur when checking perpendicular coordinates on the edge of the board
+            # So nothing needs to be done, as it can't add any more letters to cur_str
+            pass
+    if len(cur_str) >= min_len:
+        return check_word( cur_str, word_tree )
     return True
 
-def board_rec_search( board, full_tree, tree_sect, hand, (y, x), (dir_y, dir_x), cur_str="", req_len=min_len ):
+def sub_board( board, (y,x), let ):
+    tile = board[y][x]['tile']
+    word = board[y][x]['word']
+    return board[:y] + [board[y][:x] + [{'let':let, 'tile':tile, 'word':word, 'new':True }] + board[y][x+1:]] + board[y+1:]
+
+def get_new_words( board, verbose=False ):
+    """ All words in the current state of the board that have at least one 'new' flag as True """
+    for y, row in enumerate( board ):
+        for x, d in enumerate( row ):
+            let = d['let']
+            new = d['new']
+            if let != blank_space:
+                for dir in forward_dirs:
+                    o_dir = oppo_dir[dir]
+                    o_y, o_x = dir_ref[o_dir]
+                    n_y = y + o_y
+                    n_x = x + o_x
+                    if check_coords( board, (n_y, n_x)):
+                        word_start = blank_space == board[n_y][n_x]['let']
+                    else:
+                        word_start = True
+                    if word_start:
+                        cur_str = let
+                        dir_y, dir_x = dir_ref[dir]
+                        n_y, n_x = y + dir_y, x + dir_x
+                        try:
+                            while blank_space != board[n_y][n_x]['let']:
+                                cur_str += board[n_y][n_x]['let']
+                                new = new or board[n_y][n_x]['new']
+                                n_y += dir_y
+                                n_x += dir_x
+                        except IndexError:
+                            pass
+                        if new and len(cur_str) >= min_len:
+                            yield (y, x), dir
+
+def get_word_score( board, (y, x), dir, verbose=False ):
+    output = 0
+    for (y, x), dir in get_new_words( board, verbose ):
+        score = 0
+        word_mult = 1
+        n_y, n_x = y, x
+        dir_y, dir_x = dir_ref[dir]
+        try:
+            while blank_space != board[n_y][n_x]['let']:
+                d = board[n_y][n_x]
+                let = d['let']
+                score += letter_ref[let] * d['tile']
+                word_mult *= d['word']
+                n_y = n_y + dir_y
+                n_x = n_x + dir_x
+        except IndexError:
+            pass
+        output += word_mult * score
+    return output
+
+def board_rec_search( board, full_tree, tree_sect, hand, (y, x), dir, cur_str="", req_len=min_len ):
+    dir_y, dir_x = dir_ref [dir]
+    n_y = y + dir_y * len(cur_str)
+    n_x = x + dir_x * len(cur_str)
     # If there's a 'word' key, it should be True, so there shouldn't be a need in checking if it's true.
     # After returning this result, continue with the rest of the search.
+    # Will only yield results if cur_str is a valid word, meets/exceeds required length, and if current space is at the end of a word.
+    # Without final condition, function could yield words without taking following letter tiles into consideration.
     try:
-        if tree_sect['word'] and len(cur_str) >= req_len:
-            yield cur_str, (y, x)
+        score = get_word_score( board, (y, x), dir )
+        if hand == []:
+            score += bingo_bonus
+        if check_board( board, full_tree, (n_y, n_x), dir ):
+            if tree_sect['word'] and len(cur_str) >= req_len and blank_space == board[n_y][n_x]['let']:
+                yield cur_str, (y, x), dir, score
+        else:
+            if tree_sect['word'] and len(cur_str) >= req_len:
+                yield cur_str, (y, x), dir, score
     except KeyError:
         pass
-    len_cur = len(cur_str) + 1
-    n_y, n_x = y + dir_y * len_cur, x + dir_x * len_cur
     if check_coords( board, (n_y, n_x)):
         let = board[n_y][n_x]['let']
         if blank_space == let:
@@ -194,42 +289,19 @@ def board_rec_search( board, full_tree, tree_sect, hand, (y, x), (dir_y, dir_x),
                     for sub_let, wild_sect in tree_sect.items():
                         if sub_let == 'word':
                             continue
-                        for result in board_rec_search( board, full_tree, wild_sect, remove_element( hand, i), (y, x), (dir_y, dir_x), cur_str + sub_let.upper(), req_len ):
-                            yield result
+                        if check_board( sub_board( board, (n_y, n_x), sub_let ), full_tree, (n_y, n_x), dir ):
+                            for result in board_rec_search( sub_board( board, (n_y, n_x), sub_let ), full_tree, wild_sect, remove_element( hand, i), (y, x), dir, cur_str + sub_let.upper(), req_len ):
+                                yield result
                 else:
                     try:
-                        for result in board_rec_search( board, full_tree, tree_sect[let], remove_element( hand, i), (y, x), (dir_y, dir_x), cur_str + let, req_len ):
-                            yield result
+                        if check_board( sub_board( board, (n_y, n_x), let ), full_tree, (n_y, n_x), dir ):
+                            for result in board_rec_search( sub_board( board, (n_y, n_x), let ), full_tree, tree_sect[let], remove_element( hand, i), (y, x), dir, cur_str + let, req_len ):
+                                yield result
                     except KeyError:
                         pass
         else:
             try:
-                for result in board_rec_search( board, full_tree, tree_sect[let], remove_element( hand, i), (y, x), (dir_y, dir_x), cur_str + let, req_len):
-                    yield result
-            except KeyError:
-                pass
-
-def rec_search( full_tree, tree_sect, hand, cur_str="", req_len=min_len ):
-    # If there's a 'word' key, it should be True, so there shouldn't be a need in checking if it's true.
-    # After returning this result, continue with the rest of the search.
-    try:
-        if tree_sect['word'] and len(cur_str) >= req_len:
-            yield cur_str
-    except KeyError:
-        pass
-    # Index and current letter being for looped through 'hand'.
-    # i makes it easier to omit the current letter when running the next level of recursion.
-    for i, let in enumerate( hand ):
-        if let == wildcard:
-            # If current letter is a wildcard, for loop through all next letters in the next iteration of word_tree, and ignores the possible 'word' iteration.
-            for sub_let, wild_sect in tree_sect.items():
-                if sub_let == 'word':
-                    continue
-                for result in rec_search( full_tree, wild_sect, remove_element( hand, i), cur_str + sub_let.upper(), req_len ):
-                    yield result
-        else:
-            try:
-                for result in rec_search( full_tree, tree_sect[let], remove_element( hand, i), cur_str + let, req_len ):
+                for result in board_rec_search( board, full_tree, tree_sect[let], hand, (y, x), dir, cur_str + let, req_len):
                     yield result
             except KeyError:
                 pass
@@ -277,25 +349,31 @@ def get_potential_list( board, len_hand ):
                             dir_y, dir_x = dir_ref[ cross_dir ]
                             if check_coords( board, (dd_y + dir_y, dd_x + dir_x)):
                                 if blank_space == board[dd_y + dir_y][dd_x + dir_x]['let']:
-                                    potential_list.append(( dd_y, dd_x, oppo_dir[ cross_dir ] ))
-                                    if (0,3,'r') == ( dd_y, dd_x, oppo_dir[ cross_dir ] ):
-                                        print (y,x), (d_y,d_x), (dd_y,dd_x), cross_dir, (dir_y, dir_x)
+                                    potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ] ))
                             else:
-                                potential_list.append(( dd_y, dd_x, oppo_dir[ cross_dir ] ))
+                                potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ] ))
                     # Repeat the same thing as the previous comment, except now for just the current space itself.
                     dir_y, dir_x = dir_ref[cross_dir]
                     if check_coords( board, (dd_y + dir_y, dd_x + dir_x)):
                         if blank_space == board[dd_y + dir_y][dd_x + dir_x]['let']:
-                            potential_list.append(( dd_y, dd_x, oppo_dir[ cross_dir ] ))
+                            potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ] ))
                     else:
-                        potential_list.append(( dd_y, dd_x, oppo_dir[ cross_dir ] ))
+                        potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ] ))
     potential_list.sort()
     if len( potential_list ) > 1:
         potential_list = [ e for i, e in enumerate(potential_list) if e != potential_list[i-1] ]
     return potential_list
 
-def search_base( board, full_tree, len_hand ):
-    potential_list = get_potential_list( board, len_hand )
+def search_base( board, full_tree, hand ):
+    potential_list = get_potential_list( board, len( hand) )
+    result_list = []
+    for (y, x), dir in potential_list:
+        result_list += [result for result in board_rec_search( board, full_tree, full_tree, hand, (y, x), dir )]
+    # Sort by score, descending.
+    result_list.sort( key=itemgetter(3), reverse=True )
+    if len( result_list ) > 1:
+        result_list = [result for i, result in enumerate( result_list ) if result != result_list[i-1] and result[3] > 0 ]
+    return result_list
 
 print "Loading...",
 word_str = open( "enable1.txt" ).read()
@@ -304,32 +382,55 @@ word_tree = tree_rec( word_list )
 print "\r          \rDone!"
 
 while True:
-    # List of inputed letters. Raw_input then is changed into a list of strings so it's easier to work with.
-    i_letters = [ i for i in raw_input( "Letters: " ).lower() ]
+    if not os.path.isfile( board_path ):
+        # If given board's file doesn't exist, create a blank one
+        # Of the same size and dimensions as (required) wwf board.txt [wwf_board_path]
+        board = []
+        
+        f = open( score_board_path, 'r' )
+        data = f.read()
+        f.close()
+        
+        f = open( board_path, 'w' )
+        for row in data.split('\n'):
+            board.append( [' ' for let in row] )
+        
+        f.write( '\n'.join([ ''.join(row) for row in board ]) )
+        f.close()
+        del( f )
     
-    result_list = [ result for result in rec_search( word_tree, word_tree, i_letters ) ]
+    board = import_board( board_path, score_board_path )
+    print_board( board )
     
-    print ''
+    hand = [e for e in raw_input('Letters: ')]
     
-    if 0 == len( result_list ):
-        print 'No results found.\n'
+    if hand == []:
+        print "Refreshing board...\n\n"
     else:
-        result_list.sort()
-        if 1 != len( result_list ):
-            result_list = [ result for i, result in enumerate( result_list[:-1] ) if result != result_list[i-1] ]
-        result_dict = {}
+        print '\nProcessing...',
         
-        # for word, points in result_list:
-            # try:
-                # result_dict[points].append( word )
-            # except KeyError:
-                # result_dict[points] = [word]
+        result_list = search_base( board, word_tree, hand )
+        result_words = []
+        result_d = {}
         
-        # for k, v in sorted( result_dict.items(), key=itemgetter(0), reverse=True ):
-            # print str(k) + ':\n' + ', '.join( sorted(v, key=len, reverse=True ) )
+        print '\r             \rComplete!\n'
         
-        for word in sorted( result_list, key=len, reverse=True ):
-            print word
+        for word, coords, dir, score in result_list:
+            result_words.append( word )
+            try:
+                result_d[score].append((word, coords, dir))
+            except KeyError:
+                result_d[score] = [(word, coords, dir)]
         
-        print '\n'
+        print '%s results found.' % (len(result_list))
+        if len(result_d.items()) > result_limit and result_limit != 0:
+            print 'Showing results for %s highest scores:\n' % (result_limit)
+        else:
+            print 'Showing all results sorted by score:\n'
+        
+        display_list = sorted( result_d.items(), key=itemgetter(0), reverse=True )
+        for score, word_list in display_list[:result_limit]:
+            print str( score ) + ':\n' + ', '.join([ '%s (%s, %s, %s)' % (word, str(y), str(x), dir) for word, (y, x), dir in word_list ]) + '\n'
+        
+        s = raw_input('Press [ENTER] when board.txt is ready to be refreshed.')
 
