@@ -21,9 +21,9 @@ letter_ref = {
     'p':4,
     'q':10,
     'r':1,
-    's':2,
-    't':2,
-    'u':3,
+    's':1,
+    't':1,
+    'u':2,
     'v':5,
     'w':4,
     'x':8,
@@ -35,6 +35,7 @@ wildcard = '?'
 min_len = 2
 blank_space = ' '
 bingo_bonus = 35
+bingo_len = 7
 board_path = 'board.txt'
 score_board_path = 'wwf board.txt'
 result_limit = 5
@@ -258,7 +259,7 @@ def get_word_score( board, (y, x), dir ):
         output += word_mult * score
     return output
 
-def board_rec_search( board, full_tree, tree_sect, hand, (y, x), dir, cur_str="", req_len=min_len ):
+def board_rec_search( board, full_tree, tree_sect, hand_len, hand_sect, (y, x), dir, cur_str="", req_len=min_len ):
     dir_y, dir_x = dir_ref [dir]
     n_y = y + dir_y * len(cur_str)
     n_x = x + dir_x * len(cur_str)
@@ -268,7 +269,10 @@ def board_rec_search( board, full_tree, tree_sect, hand, (y, x), dir, cur_str=""
     # Without final condition, function could yield words without taking following letter tiles into consideration.
     try:
         score = get_word_score( board, (y, x), dir )
-        if hand == []:
+        # number of letters in hand minus initial number of letters in hand
+        # yields the total number of letters from hand used.
+        # Use this figure here to determine whether or not to add bonus for using 7 letters
+        if hand_len - len(hand_sect) >= bingo_len:
             score += bingo_bonus
         if check_coords( board, (n_y, n_x) ):
             if tree_sect['word'] and len(cur_str) >= req_len and blank_space == board[n_y][n_x]['let']:
@@ -290,18 +294,18 @@ def board_rec_search( board, full_tree, tree_sect, hand, (y, x), dir, cur_str=""
                         if sub_let == 'word':
                             continue
                         if check_board( sub_board( board, (n_y, n_x), sub_let ), full_tree, (n_y, n_x), dir ):
-                            for result in board_rec_search( sub_board( board, (n_y, n_x), sub_let ), full_tree, wild_sect, remove_element( hand, i), (y, x), dir, cur_str + sub_let.upper(), req_len ):
+                            for result in board_rec_search( sub_board( board, (n_y, n_x), sub_let ), full_tree, wild_sect, hand_len, remove_element( hand_sect, i), (y, x), dir, cur_str + sub_let.upper(), req_len ):
                                 yield result
                 else:
                     try:
                         if check_board( sub_board( board, (n_y, n_x), let ), full_tree, (n_y, n_x), dir ):
-                            for result in board_rec_search( sub_board( board, (n_y, n_x), let ), full_tree, tree_sect[let], remove_element( hand, i), (y, x), dir, cur_str + let, req_len ):
+                            for result in board_rec_search( sub_board( board, (n_y, n_x), let ), full_tree, tree_sect[let], hand_len, remove_element( hand_sect, i), (y, x), dir, cur_str + let, req_len ):
                                 yield result
                     except KeyError:
                         pass
         else:
             try:
-                for result in board_rec_search( board, full_tree, tree_sect[let], hand, (y, x), dir, cur_str + let, req_len):
+                for result in board_rec_search( board, full_tree, tree_sect[let], hand_len, hand_sect, (y, x), dir, cur_str + let, req_len):
                     yield result
             except KeyError:
                 pass
@@ -368,7 +372,7 @@ def search_base( board, full_tree, hand ):
     potential_list = get_potential_list( board, len( hand) )
     result_list = []
     for (y, x), dir in potential_list:
-        result_list += [result for result in board_rec_search( board, full_tree, full_tree, hand, (y, x), dir )]
+        result_list += [result for result in board_rec_search( board, full_tree, full_tree, len( hand ), hand, (y, x), dir )]
     # Sort by score, descending.
     result_list.sort( key=itemgetter(3), reverse=True )
     if len( result_list ) > 1:
@@ -434,4 +438,3 @@ while True:
         
         s = raw_input('Press [ENTER] when board.txt is ready to be refreshed.')
 
-ejrr
