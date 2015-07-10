@@ -39,12 +39,13 @@ bingo_len = 7
 board_path = 'board.txt'
 score_board_path = 'wwf board.txt'
 result_limit = 5
+start_coords = (7, 7)
 
 dir_ref = {'u':(-1,0), 'd':(1,0), 'l':(0,-1), 'r':(0,1)}
 oppo_dir = {'u':'d', 'd':'u', 'l':'r', 'r':'l'}
 # Perpendicular directions of given dir
 perp_dir = {'u':'lr', 'd':'lr', 'l':'ud', 'r':'ud',}
-# These are the directions that words are oriented in.
+# These are the directions that all words are oriented in.
 forward_dirs = 'rd'
 
 cross_list = [
@@ -66,7 +67,25 @@ board_word_ref = {
     'T':3}
 
 def print_board( board ):
-    print '\n'.join( ['+' + '-' * len( board[0] ) + '+'] + [ '|' + ''.join([ d['let'] for d in row ]) + '|' for row in board ] + ['+' + '-' * len( board[-1] ) + '+']) + '\n'
+    output = ['╔' + '═' * len( board[0] ) + '╗']
+    for y, row in enumerate( board ):
+        output.append( '║' )
+        for x, d in enumerate( row ):
+            let = d['let']
+            if let == blank_space:
+                word = d['word']
+                tile = d['tile']
+                if word != 1:
+                    output[-1] += '  ░▓'[word]
+                elif tile != 1:
+                    output[-1] += '  ░▓'[tile]
+                else:
+                    output[-1] += '·'
+            else:
+                output[-1] += let
+        output[-1] += '║'
+    output.append( '╚' + '═' * len( board[-1] ) + '╝' )
+    print '\n'.join( output )
 
 def import_board( board_path, score_board_path ):
     # Function absolutely requires board_path and score_board_path to be the same dimensions
@@ -112,36 +131,6 @@ def check_coords( board, (y, x) ):
         return y >= 0 and x >= 0 and y < len( board ) and x < len( board[y] )
     except IndexError:
         return False
-
-def find_empty_slots( board, num, (y, x), dir, blank=' ' ):
-    """ Given board, coordinates, direction and a number, returns the first [num] [blank] spots in [board] from [y, x] in direction [dir] """
-    add = 0
-    dir = dir_ref[dir]
-    
-    # Please excuse this mess of code. Some of it is brilliant in my opinion, but other parts sloppy.
-    # For loop through num so to yield the correct [num] of coordinates, 
-    # Then inside, check if current coordinate is blank or not.
-    # If not blank, add+=1 repeat, else break out of while loop and yield to repeat
-    # If instead the coordinates go off the board, that's as many legal coordinates as you can get
-    # And instead cont = False to then break out of the for loop
-    for i in range( num ):
-        cont = True
-        while cont:
-            # Some time eventually, I want to fix up this bit of code, as there has to be a better way to do this.
-            # But for now, it works and it'll do the job properly.
-            d_y, d_x = dir
-            d_x *= i + add
-            d_y *= i + add
-            if check_coords( board, ( y + d_y, x + d_x )):
-                if blank == board [ y + d_y ][ x + d_x ]['let']:
-                    break
-                yield ( y + d_y, x + d_x )
-                add += 1
-            else:
-                cont = False
-        else:
-            break
-        yield ( y + d_y, x + d_x )
 
 def remove_element( list, index ):
     return list[:index] + list[index+1:]
@@ -285,9 +274,9 @@ def board_rec_search( board, full_tree, tree_sect, hand_len, hand_sect, (y, x), 
     if check_coords( board, (n_y, n_x)):
         let = board[n_y][n_x]['let']
         if blank_space == let:
-            # Index and current letter being for looped through 'hand'.
+            # Index and current letter being for looped through 'hand_sect'.
             # i makes it easier to omit the current letter when running the next level of recursion.
-            for i, let in enumerate( hand ):
+            for i, let in enumerate( hand_sect ):
                 if let == wildcard:
                     # If current letter is a wildcard, for loop through all next letters in the next iteration of word_tree, and ignores the possible 'word' iteration.
                     for sub_let, wild_sect in tree_sect.items():
@@ -312,13 +301,16 @@ def board_rec_search( board, full_tree, tree_sect, hand_len, hand_sect, (y, x), 
 
 def print_potential( board, potential_list ):
     output = []
+    # Potential_list contains distance values for the final element per potential
+    # But it's a lot easier to find results without that value.
+    edited_list = [ (y, x, dir) for (y, x), dir, dist in potential_list ]
     for y, row in enumerate( board ):
         output.append( [] )
         for x, d in enumerate( row ):
             let = d['let']
             if let == ' ':
-                    d = (y,x,'d') in potential_list
-                    r = (y,x,'r') in potential_list
+                    d = (y, x, 'd') in edited_list
+                    r = (y, x, 'r') in edited_list
                     if r:
                             if d:
                                     output[y].append( '+' )
@@ -334,18 +326,75 @@ def print_potential( board, potential_list ):
     for row in output:
         print ''.join([ let for let in row ]) + '|'
 
+def find_empty_slots( board, num, (y, x), dir, blank=' ' ):
+    """ Given board, coordinates, direction and a number, returns the first [num] [blank] spots in [board] from [y, x] in direction [dir] """
+    add = 0
+    dir = dir_ref[dir]
+    
+    # Please excuse this mess of code. Some of it is brilliant in my opinion, but other parts sloppy.
+    # For loop through num so to yield the correct [num] of coordinates, 
+    # Then inside, check if current coordinate is blank or not.
+    # If not blank, add+=1 repeat, else break out of while loop and yield to repeat
+    # If instead the coordinates go off the board, that's as many legal coordinates as you can get
+    # And instead cont = False to then break out of the for loop
+    for i in range( num ):
+        cont = True
+        while cont:
+            # Some time eventually, I want to fix up this bit of code, as there has to be a better way to do this.
+            # But for now, it works and it'll do the job properly.
+            d_y, d_x = dir
+            d_x *= i + add
+            d_y *= i + add
+            if check_coords( board, ( y + d_y, x + d_x )):
+                if blank == board [ y + d_y ][ x + d_x ]['let']:
+                    break
+                yield ( y + d_y, x + d_x, i + add + 1 )
+                add += 1
+            else:
+                cont = False
+        else:
+            break
+        yield ( y + d_y, x + d_x, i + add + 1 )
+
+def reduce_potential_list( potential_list ):
+    output_list = []
+    output_d = {}
+    for potential in potential_list:
+        (y, x), dir, dist = potential
+        try:
+            if output_d[y]:
+                pass
+        except KeyError:
+            output_d[y] = {}
+        try:
+            if output_d[y][x]:
+                pass
+        except KeyError:
+            output_d[y][x] = {}
+        try:
+            output_d[y][x][dir].append( dist )
+        except KeyError:
+            output_d[y][x][dir] = [dist]
+    for y, val_1 in output_d.items():
+        for x, val_2 in val_1.items():
+            for dir, val_3 in val_2.items():
+                output_list.append(( (y, x), dir, min(val_3) ))
+    return output_list
+
 def get_potential_list( board, len_hand ):
     potential_list = []
+    count_blanks = 0
     for y, row in enumerate( board ):
         for x, d in enumerate( row ):
             let = d['let']
             if let != blank_space:
+                count_blanks += 1
                 for cross_coords, cross_dir in cross_list:
                     # Delta x and y from a list of constants, chosen so it goes in a semi-cross pattern around the current letter.
                     # First pass is for words that will be going downwards in direction, then second pass left-wards.
                     for d_y, d_x in cross_coords:
                         # Find empty slots above/left the semi-cross slots.
-                        for dd_y, dd_x in find_empty_slots( board, len_hand, ( y + d_y, x + d_x ), cross_dir ):
+                        for dd_y, dd_x, dist in find_empty_slots( board, len_hand, ( y + d_y, x + d_x ), cross_dir ):
                             # Syntax check to make sure next slot is valid.
                             # This will check the next slot up if it's blank.
                             # This is necessary because otherwise it'll start trying to place a word in the middle
@@ -353,30 +402,48 @@ def get_potential_list( board, len_hand ):
                             dir_y, dir_x = dir_ref[ cross_dir ]
                             if check_coords( board, (dd_y + dir_y, dd_x + dir_x)):
                                 if blank_space == board[dd_y + dir_y][dd_x + dir_x]['let']:
-                                    potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ] ))
+                                    potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ], dist ))
                             else:
-                                potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ] ))
+                                potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ], dist ))
                     # Repeat the same thing as the previous comment, except now for just the current space itself.
                     dir_y, dir_x = dir_ref[cross_dir]
                     if check_coords( board, (dd_y + dir_y, dd_x + dir_x)):
                         if blank_space == board[dd_y + dir_y][dd_x + dir_x]['let']:
-                            potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ] ))
+                            potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ], dist ))
                     else:
-                        potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ] ))
-    potential_list.sort()
-    if len( potential_list ) > 1:
-        potential_list = [ e for i, e in enumerate(potential_list) if e != potential_list[i-1] ]
+                        potential_list.append(( (dd_y, dd_x), oppo_dir[ cross_dir ], dist ))
+    if count_blanks == 0:
+        # Count_blanks is a bit backwards, because it counts non-blanks.
+        # If at the end of the full board run, the number of non-blanks equals 0,
+        # The board must be blank, and add in potentials based around the starting coordinates (7, 7)
+        y, x = start_coords
+        for dir in forward_dirs:
+            dir_y, dir_x = dir_ref [oppo_dir [dir] ]
+            for i in range( len_hand ):
+                d_y = i * dir_y + y
+                d_x = i * dir_x + x
+                potential_list.append(( (d_y, d_x), dir, i ))
     return potential_list
 
-def search_base( board, full_tree, hand ):
+def search_base( board, full_tree, hand, verbose=False ):
     potential_list = get_potential_list( board, len( hand) )
+    potential_list = reduce_potential_list( potential_list )
     result_list = []
-    for (y, x), dir in potential_list:
-        result_list += [result for result in board_rec_search( board, full_tree, full_tree, len( hand ), hand, (y, x), dir )]
+    pot_len = len( potential_list )
+    for i, ((y, x), dir, dist) in enumerate( potential_list ):
+        if verbose:
+            print '\r%s of %s tiles checked.' % (i, pot_len),
+        if dist < min_len:
+            # Distance is often 1, so make sure that distance is greater than minimum word length
+            result_list += [ result for result in board_rec_search( board, full_tree, full_tree, len( hand ), hand, (y, x), dir )]
+        else:
+            result_list += [ result for result in board_rec_search( board, full_tree, full_tree, len( hand ), hand, (y, x), dir, req_len=dist )]
+    if verbose:
+        print '\r%s of %s tiles checked.' % (pot_len, pot_len),
     # Sort by score, descending.
     result_list.sort( key=itemgetter(3), reverse=True )
     if len( result_list ) > 1:
-        result_list = [result for i, result in enumerate( result_list ) if result != result_list[i-1] and result[3] > 0 ]
+        result_list = [ result for i, result in enumerate( result_list ) if result != result_list[i-1] and result[3] > 0 ]
     return result_list
 
 print "Loading...",
@@ -411,13 +478,13 @@ while True:
     if hand == []:
         print "Refreshing board...\n\n"
     else:
-        print '\nProcessing...',
+        print '\nProcessing...'
         
-        result_list = search_base( board, word_tree, hand )
+        result_list = search_base( board, word_tree, hand, verbose=True )
         result_words = []
         result_d = {}
         
-        print '\r             \rComplete!\n'
+        print '\nComplete!'
         
         for word, coords, dir, score in result_list:
             result_words.append( word )
