@@ -192,9 +192,11 @@ def check_board( board, word_tree, (y, x), dir ):
         return check_word( cur_str, word_tree )
     return True
 
-def sub_board( board, (y,x), let ):
+def sub_board( board, (y,x), let, wildcard=False ):
     tile = board[y][x]['tile']
     word = board[y][x]['word']
+    if wildcard:
+        tile = 0
     return board[:y] + [board[y][:x] + [{'let':let, 'tile':tile, 'word':word, 'new':True }] + board[y][x+1:]] + board[y+1:]
 
 def get_new_words( board ):
@@ -283,7 +285,7 @@ def board_rec_search( board, full_tree, tree_sect, hand_len, hand_sect, (y, x), 
                         if sub_let == 'word':
                             continue
                         if check_board( sub_board( board, (n_y, n_x), sub_let ), full_tree, (n_y, n_x), dir ):
-                            for result in board_rec_search( sub_board( board, (n_y, n_x), sub_let ), full_tree, wild_sect, hand_len, remove_element( hand_sect, i), (y, x), dir, cur_str + sub_let.upper(), req_len ):
+                            for result in board_rec_search( sub_board( board, (n_y, n_x), sub_let, wildcard=True ), full_tree, wild_sect, hand_len, remove_element( hand_sect, i), (y, x), dir, cur_str + sub_let.upper(), req_len ):
                                 yield result
                 else:
                     try:
