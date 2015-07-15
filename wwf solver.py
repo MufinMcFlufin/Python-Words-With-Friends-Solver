@@ -39,6 +39,7 @@ bingo_len = 7
 board_path = 'board.txt'
 score_board_path = 'wwf board.txt'
 result_limit = 5
+extras_limit = 3
 start_coords = (7, 7)
 
 dir_ref = {'u':(-1,0), 'd':(1,0), 'l':(0,-1), 'r':(0,1)}
@@ -66,7 +67,7 @@ board_word_ref = {
     't':1,
     'T':3}
 
-def print_board( board ):
+def print_board( board, mult=True ):
     output = ['╔' + '═' * len( board[0] ) + '╗']
     for y, row in enumerate( board ):
         output.append( '║' )
@@ -75,12 +76,12 @@ def print_board( board ):
             if let == blank_space:
                 word = d['word']
                 tile = d['tile']
-                if word != 1:
-                    output[-1] += '  ░▓'[word]
-                elif tile != 1:
-                    output[-1] += '  ░▓'[tile]
+                if word != 1 and mult:
+                    output[-1] += '  ∙∙'[word]
+                elif tile != 1 and mult:
+                    output[-1] += '  ··'[tile]
                 else:
-                    output[-1] += '·'
+                    output[-1] += ' '
             else:
                 output[-1] += let
         output[-1] += '║'
@@ -428,6 +429,7 @@ def get_potential_list( board, len_hand ):
     return potential_list
 
 def search_base( board, full_tree, hand, verbose=False ):
+    print '\r' + ' '*78,
     potential_list = get_potential_list( board, len( hand) )
     potential_list = reduce_potential_list( potential_list )
     result_list = []
@@ -442,16 +444,30 @@ def search_base( board, full_tree, hand, verbose=False ):
             result_list += [ result for result in board_rec_search( board, full_tree, full_tree, len( hand ), hand, (y, x), dir, req_len=dist )]
     if verbose:
         print '\r%s of %s tiles checked.' % (pot_len, pot_len),
-    # Sort by score, descending.
-    result_list.sort( key=itemgetter(3), reverse=True )
-    if len( result_list ) > 1:
+    # First sort by word, ascending.
+    result_list.sort( key=itemgetter(0) )
+    # This removes any repeat results. After being sorted, the first result shouldn't be the same as the last.
+    # If it is, then that means that repeat result is the only one in the entire list, so only use one.
+    if result_list[0] != result_list[-1]:
+        # Because the result_list is sorted, repeat results should be next to one another.
+        # Omit all results that are the same as the previous one.
         result_list = [ result for i, result in enumerate( result_list ) if result != result_list[i-1] and result[3] > 0 ]
+    else:
+        result_list = [result_list[0]]
+    # Then sort by score, descending.
+    result_list.sort( key=itemgetter(3), reverse=True )
     return result_list
 
 print "Loading...",
+
 word_str = open( "enable1.txt" ).read()
 word_list = word_str.lower().split( '\n' )
-word_tree = tree_rec( word_list )
+enable1_tree = tree_rec( word_list )
+
+word_str = open( "enable2.txt" ).read()
+word_list = word_str.lower().split( '\n' )
+enable2_tree = tree_rec( word_list )
+
 print "\r          \rDone!"
 
 while True:
@@ -482,28 +498,35 @@ while True:
     else:
         print '\nProcessing...'
         
-        result_list = search_base( board, word_tree, hand, verbose=True )
-        result_words = []
+        result_list = search_base( board, enable1_tree, hand, verbose=True )
+        extras_list = search_base( board, enable2_tree, hand, verbose=True )
         result_d = {}
+        extras_d = {}
         
         print '\nComplete!'
         
         for word, coords, dir, score in result_list:
-            result_words.append( word )
             try:
                 result_d[score].append((word, coords, dir))
             except KeyError:
                 result_d[score] = [(word, coords, dir)]
         
-        print '%s results found.' % (len(result_list))
-        if len(result_d.items()) > result_limit and result_limit != 0:
-            print 'Showing results for %s highest scores:\n' % (result_limit)
-        else:
-            print 'Showing all results sorted by score:\n'
+        for word, coords, dir, score in extras_list:
+            try:
+                extras_d[score].append((word, coords, dir))
+            except KeyError:
+                extras_d[score] = [(word, coords, dir)]
         
-        display_list = sorted( result_d.items(), key=itemgetter(0), reverse=True )
-        for score, word_list in display_list[:result_limit]:
-            print str( score ) + ':\n' + ', '.join([ '%s (%s, %s, %s)' % (word, str(y), str(x), dir) for word, (y, x), dir in word_list ]) + '\n'
+        for cur_d, cur_limit, cur_str, cur_len in [(result_d, result_limit, 'definite', len(result_list)), (extras_d, extras_limit, 'possible', len(extras_list))]:
+            print '\n%s %s results found.' % (cur_len, cur_str)
+            if len(cur_d.items()) > cur_limit and cur_limit != 0:
+                print 'Showing %s results for %s highest scores:\n' % (cur_str, cur_limit)
+            else:
+                print 'Showing all %s results sorted by score:\n' % (cur_str)
+            
+            display_list = sorted( cur_d.items(), key=itemgetter(0), reverse=True )
+            for score, word_list in display_list[:cur_limit]:
+                print str( score ) + ':\n' + ', '.join([ '%s (%s, %s, %s)' % (word, str(y), str(x), dir) for word, (y, x), dir in word_list ]) + '\n'
         
-        s = raw_input('Press [ENTER] when board.txt is ready to be refreshed.')
+        s = raw_input('\nPress [ENTER] when board.txt is ready to be refreshed.')
 
